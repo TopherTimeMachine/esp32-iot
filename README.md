@@ -1,12 +1,14 @@
-# ESP32 Web Server with Sensors and Webhooks
+# ESP32 Web Server with Sensors, Alarms & Webhooks
 
-Complete ESP32 code for creating a web service that can:
-- Display sensor readings (temperature, humidity, motion, light)
-- Control outputs (relay, LED)
-- Send webhook notifications when events occur
-- Provide REST API endpoints for integration
-- **NEW:** Configure sensors dynamically via web interface
-- **NEW:** Support for DS18B20 waterproof temperature sensors
+Complete ESP32 code for creating a configurable IoT sensor hub with:
+- **DS18B20 Waterproof Sensors:** Multiple temperature sensors on one bus with custom IDs
+- **Sensor Suite:** DHT22 temperature/humidity, PIR motion, LDR light sensor
+- **Output Control:** Relay and LED control via web interface and API
+- **Alarm System:** Configurable min/max thresholds with webhook notifications
+- **Scheduled Webhooks:** Send sensor data to endpoints every X minutes
+- **Web Configuration:** Manage all settings via browser - no reprogramming needed
+- **REST API:** Full API for integration with home automation systems
+- **Persistent Storage:** All configurations saved to flash memory
 
 ## Which Version Should I Use?
 
@@ -18,7 +20,9 @@ Complete ESP32 code for creating a web service that can:
 - Multiple temperature sensors (up to 8 on one bus)
 - Web-based sensor configuration
 - Custom sensor IDs and names
-- Persistent storage of settings
+- Configurable alarm thresholds with webhook notifications
+- Scheduled webhook updates (send sensor data every X minutes)
+- Persistent storage of all settings
 - Full sensor suite (DHT22, motion, light, relay, LED)
 
 ### Full Version (`esp32_webserver_webhook.ino`)
@@ -189,6 +193,156 @@ Adjust these in the code:
 5. Open Serial Monitor (115200 baud)
 6. Press EN button on ESP32 to see IP address
 
+## Using the Configurable Version
+
+### Accessing the Web Interfaces
+
+After uploading and connecting to WiFi, the ESP32 will display its IP address in the Serial Monitor. You can access these pages:
+
+- **Dashboard:** `http://192.168.1.XXX/` - View all sensor readings
+- **Sensor Config:** `http://192.168.1.XXX/config` - Add/remove DS18B20 sensors
+- **Alarm Config:** `http://192.168.1.XXX/config/alarms` - Set up alarm thresholds
+- **Webhook Config:** `http://192.168.1.XXX/config/webhooks` - Configure scheduled updates
+
+### Configuring DS18B20 Sensors
+
+1. Navigate to `/config` in your web browser
+2. Click "Scan Bus" to discover all connected DS18B20 sensors
+3. For each sensor found, click "Add Sensor"
+4. Enter a unique ID (e.g., `pool_temp`, `outdoor_temp`)
+5. Enter a friendly name (e.g., `Pool Temperature`, `Outdoor Sensor`)
+6. Settings are automatically saved to flash memory
+
+### Setting Up Alarms
+
+Alarms monitor sensor values and send webhook notifications when thresholds are exceeded.
+
+**Via Web Interface:**
+1. Navigate to `/config/alarms`
+2. Fill out the form:
+   - **Alarm ID:** Unique identifier (e.g., `pool_temp_high`)
+   - **Name:** Descriptive name (e.g., `Pool Temperature Too High`)
+   - **Sensor Type:** Choose from DS18B20, DHT Temp, DHT Humidity, Light, or Motion
+   - **Sensor ID:** For DS18B20, enter your sensor ID. For others, auto-filled
+   - **Min Value:** Minimum acceptable value (-999 to disable)
+   - **Max Value:** Maximum acceptable value (999 to disable)
+   - **Webhook URL:** Where to send notifications
+   - **Cooldown:** Minimum time between alerts (in milliseconds)
+3. Click "Add Alarm"
+
+**Example Use Cases:**
+- Pool temperature too hot: `max_value: 30.0` (alert if above 30°C)
+- Pool temperature too cold: `min_value: 22.0` (alert if below 22°C)
+- Freezer temperature alarm: `min_value: -18.0, max_value: -10.0`
+- High humidity alert: `sensor_type: dht_hum, max_value: 80.0`
+
+**Via API:**
+```bash
+curl -X POST http://192.168.1.XXX/api/alarm/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "pool_temp_high",
+    "name": "Pool Temperature High",
+    "sensor_type": "ds18b20",
+    "sensor_id": "pool_temp",
+    "min_value": -999,
+    "max_value": 30.0,
+    "webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK",
+    "cooldown_ms": 300000,
+    "enabled": true
+  }'
+```
+
+### Configuring Scheduled Webhooks
+
+Scheduled webhooks send complete sensor data to an endpoint at regular intervals.
+
+**Via Web Interface:**
+1. Navigate to `/config/webhooks`
+2. Fill out the form:
+   - **Webhook ID:** Unique identifier (e.g., `slack_hourly`)
+   - **Name:** Descriptive name (e.g., `Slack Hourly Updates`)
+   - **URL:** Your webhook endpoint
+   - **Update Interval:** How often to send (in milliseconds)
+     - 0 = Disabled
+     - 300000 = Every 5 minutes
+     - 3600000 = Every hour
+     - 86400000 = Every 24 hours
+3. Click "Add Webhook"
+
+**Via API:**
+```bash
+curl -X POST http://192.168.1.XXX/api/webhook/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "slack_updates",
+    "name": "Slack Hourly Updates",
+    "url": "https://hooks.slack.com/services/YOUR/WEBHOOK",
+    "update_interval_ms": 3600000,
+    "enabled": true
+  }'
+```
+
+**Scheduled Webhook Payload:**
+```json
+{
+  "event": "scheduled_update",
+  "webhook_name": "Slack Hourly Updates",
+  "timestamp": 123456789,
+  "dht_temperature": 25.5,
+  "dht_humidity": 60.2,
+  "light": 75,
+  "motion": 0,
+  "relay": false,
+  "led": false,
+  "ds18b20_sensors": [
+    {
+      "id": "pool_temp",
+      "name": "Pool Temperature",
+      "temperature": 28.3
+    }
+  ]
+}
+```
+
+**Alarm Webhook Payload:**
+```json
+{
+  "event": "alarm_triggered",
+  "message": "Pool Temperature High is above maximum threshold (31.2 > 30.0)",
+  "sensor_id": "pool_temp",
+  "value": 31.2,
+  "device": "ESP32",
+  "timestamp": 123456789
+}
+```
+
+### Reading Sensor Data via API
+
+Get all current sensor readings:
+```bash
+curl http://192.168.1.XXX/data
+```
+
+Get specific DS18B20 sensor readings:
+```bash
+curl http://192.168.1.XXX/api/list-ds18b20
+```
+
+### Controlling Outputs via API
+
+Turn relay on/off:
+```bash
+curl http://192.168.1.XXX/relay?state=on
+curl http://192.168.1.XXX/relay?state=off
+```
+
+Turn LED on/off:
+```bash
+curl http://192.168.1.XXX/led?state=on
+curl http://192.168.1.XXX/led?state=off
+```
+
 ## API Endpoints
 
 ### Common Endpoints (All Versions)
@@ -292,6 +446,106 @@ List all configured DS18B20 sensors
       "temperature": 28.3
     }
   ]
+}
+```
+
+#### GET /config/alarms
+Web interface for alarm configuration
+
+#### GET /config/webhooks
+Web interface for webhook configuration
+
+#### GET /api/alarms
+List all configured alarms
+```json
+{
+  "alarms": [
+    {
+      "id": "pool_temp_high",
+      "name": "Pool Temperature High",
+      "sensor_type": "ds18b20",
+      "sensor_id": "pool_temp",
+      "min_value": -999.0,
+      "max_value": 30.0,
+      "enabled": true,
+      "webhook_url": "https://your-webhook-url.com/alert",
+      "cooldown_ms": 60000
+    }
+  ]
+}
+```
+
+#### POST /api/alarm/add
+Add a new alarm
+```json
+{
+  "id": "pool_temp_high",
+  "name": "Pool Temperature High Alert",
+  "sensor_type": "ds18b20",
+  "sensor_id": "pool_temp",
+  "min_value": -999.0,
+  "max_value": 30.0,
+  "webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK",
+  "cooldown_ms": 60000,
+  "enabled": true
+}
+```
+**Sensor Types:** `ds18b20`, `dht_temp`, `dht_hum`, `light`, `motion`
+
+**Note:** For non-DS18B20 sensors, `sensor_id` should match the sensor type (e.g., "dht_temp")
+
+#### POST /api/alarm/update
+Update an existing alarm (same JSON format as add)
+
+#### POST /api/alarm/delete
+Delete an alarm
+```json
+{
+  "id": "pool_temp_high"
+}
+```
+
+#### GET /api/webhooks
+List all configured webhooks
+```json
+{
+  "webhooks": [
+    {
+      "id": "slack_updates",
+      "name": "Slack Hourly Updates",
+      "url": "https://hooks.slack.com/services/YOUR/WEBHOOK",
+      "enabled": true,
+      "update_interval_ms": 3600000
+    }
+  ]
+}
+```
+
+#### POST /api/webhook/add
+Add a new scheduled webhook
+```json
+{
+  "id": "slack_updates",
+  "name": "Slack Updates",
+  "url": "https://hooks.slack.com/services/YOUR/WEBHOOK",
+  "update_interval_ms": 3600000,
+  "enabled": true
+}
+```
+**Update Intervals:**
+- `0` = Disabled (only triggered by alarms)
+- `300000` = 5 minutes
+- `3600000` = 1 hour
+- `86400000` = 24 hours
+
+#### POST /api/webhook/update
+Update webhook settings (same JSON format as add)
+
+#### POST /api/webhook/delete
+Delete a webhook
+```json
+{
+  "id": "slack_updates"
 }
 ```
 
