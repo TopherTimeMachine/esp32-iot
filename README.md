@@ -5,8 +5,54 @@ Complete ESP32 code for creating a web service that can:
 - Control outputs (relay, LED)
 - Send webhook notifications when events occur
 - Provide REST API endpoints for integration
+- **NEW:** Configure sensors dynamically via web interface
+- **NEW:** Support for DS18B20 waterproof temperature sensors
+
+## Which Version Should I Use?
+
+### ⭐ Configurable Version (`esp32_configurable_sensors.ino`) - RECOMMENDED
+**Best for:** Waterproof temperature sensing, pool monitoring, outdoor applications, multi-sensor deployments
+
+**Choose this if you need:**
+- Waterproof DS18B20 temperature sensors
+- Multiple temperature sensors (up to 8 on one bus)
+- Web-based sensor configuration
+- Custom sensor IDs and names
+- Persistent storage of settings
+- Full sensor suite (DHT22, motion, light, relay, LED)
+
+### Full Version (`esp32_webserver_webhook.ino`)
+**Best for:** Complete home automation, indoor monitoring
+
+**Choose this if you need:**
+- DHT22 temperature/humidity sensor only
+- Motion detection
+- Light level monitoring
+- Relay and LED control
+- Webhook notifications
+- Simple, fixed configuration
+
+### Simple Version (`esp32_simple_webserver.ino`)
+**Best for:** Beginners, learning, minimal setups
+
+**Choose this if you need:**
+- One temperature sensor
+- One relay
+- Basic web interface
+- Minimal complexity
 
 ## Hardware Requirements
+
+### Configurable Version (esp32_configurable_sensors.ino) - RECOMMENDED
+- ESP32 development board (ESP32 DevKit V1 or similar)
+- **DS18B20 waterproof temperature sensors** (1-8 sensors on one bus)
+- 4.7kΩ resistor (pull-up for OneWire bus)
+- DHT22 temperature/humidity sensor
+- PIR motion sensor (HC-SR501 or similar)
+- LDR (Light Dependent Resistor) with 10kΩ resistor
+- Relay module (5V)
+- LED with 220Ω resistor
+- Breadboard and jumper wires
 
 ### Full Version (esp32_webserver_webhook.ino)
 - ESP32 development board (ESP32 DevKit V1 or similar)
@@ -23,8 +69,19 @@ Complete ESP32 code for creating a web service that can:
 - Relay module
 - Basic components
 
-## Pin Connections (Full Version)
+## Pin Connections
 
+### Configurable Version
+| Component | ESP32 Pin |
+|-----------|-----------|
+| DS18B20 Data (OneWire) | GPIO 13 |
+| DHT22 Data | GPIO 15 |
+| PIR Sensor | GPIO 14 |
+| LDR | GPIO 34 (ADC) |
+| Relay | GPIO 26 |
+| LED | GPIO 27 |
+
+### Full Version
 | Component | ESP32 Pin |
 |-----------|-----------|
 | DHT22 Data | GPIO 15 |
@@ -32,6 +89,14 @@ Complete ESP32 code for creating a web service that can:
 | LDR | GPIO 34 (ADC) |
 | Relay | GPIO 26 |
 | LED | GPIO 27 |
+
+### DS18B20 OneWire Circuit (Configurable Version)
+```
+3.3V ---- 4.7kΩ Resistor ---- GPIO 13 (Data)
+                |
+         DS18B20 Sensor(s) ---- GND
+```
+**Note:** Multiple DS18B20 sensors can share the same OneWire bus
 
 ### LDR Circuit
 ```
@@ -53,6 +118,15 @@ Complete ESP32 code for creating a web service that can:
 
 ### Required Libraries
 Install these via Library Manager (Sketch → Include Library → Manage Libraries):
+
+**For Configurable Version:**
+1. **DHT sensor library** by Adafruit (version 1.4.x or newer)
+2. **Adafruit Unified Sensor** (dependency for DHT)
+3. **ArduinoJson** by Benoit Blanchon (version 6.x)
+4. **OneWire** by Paul Stoffregen (for DS18B20)
+5. **DallasTemperature** by Miles Burton (for DS18B20)
+
+**For Full/Simple Versions:**
 1. **DHT sensor library** by Adafruit (version 1.4.x or newer)
 2. **Adafruit Unified Sensor** (dependency for DHT)
 3. **ArduinoJson** by Benoit Blanchon (version 6.x)
@@ -61,6 +135,7 @@ Built-in libraries (no installation needed):
 - WiFi
 - WebServer
 - HTTPClient
+- Preferences (for configurable version)
 
 ## Configuration
 
@@ -116,10 +191,113 @@ Adjust these in the code:
 
 ## API Endpoints
 
-### GET /
+### Common Endpoints (All Versions)
+
+#### GET /
 Returns the main web dashboard with live updating sensor display
 
-### GET /data
+#### GET /relay?state=on
+#### GET /relay?state=off
+Controls the relay
+- Response: "Relay ON" or "Relay OFF"
+
+#### GET /led?state=on
+#### GET /led?state=off
+Controls the LED
+- Response: "LED ON" or "LED OFF"
+
+### Configurable Version Endpoints
+
+#### GET /data
+Returns JSON with all sensor readings including DS18B20 sensors
+```json
+{
+  "dht": {
+    "temperature": 25.5,
+    "humidity": 60.2
+  },
+  "ds18b20": [
+    {
+      "id": "pool_temp",
+      "name": "Pool Temperature",
+      "temperature": 28.3,
+      "address": "28:AA:BB:CC:DD:EE:FF:00"
+    },
+    {
+      "id": "outdoor_temp",
+      "name": "Outdoor Temperature",
+      "temperature": 22.1,
+      "address": "28:11:22:33:44:55:66:77"
+    }
+  ],
+  "motion": 0,
+  "light": 75,
+  "relay": false,
+  "led": false
+}
+```
+
+#### GET /config
+Web interface for sensor configuration
+
+#### GET /scan-ds18b20
+Scans the OneWire bus for DS18B20 sensors
+```json
+{
+  "count": 2,
+  "discovered": [
+    "28:AA:BB:CC:DD:EE:FF:00",
+    "28:11:22:33:44:55:66:77"
+  ]
+}
+```
+
+#### POST /add-ds18b20
+Add a new DS18B20 sensor to configuration
+```json
+{
+  "address": "28:AA:BB:CC:DD:EE:FF:00",
+  "id": "pool_temp",
+  "name": "Pool Temperature"
+}
+```
+
+#### POST /update-ds18b20
+Update sensor name or settings
+```json
+{
+  "id": "pool_temp",
+  "name": "Swimming Pool Temperature"
+}
+```
+
+#### POST /remove-ds18b20
+Remove a sensor from configuration
+```json
+{
+  "address": "28:AA:BB:CC:DD:EE:FF:00"
+}
+```
+
+#### GET /list-ds18b20
+List all configured DS18B20 sensors
+```json
+{
+  "sensors": [
+    {
+      "id": "pool_temp",
+      "name": "Pool Temperature",
+      "address": "28:AA:BB:CC:DD:EE:FF:00",
+      "enabled": true,
+      "temperature": 28.3
+    }
+  ]
+}
+```
+
+### Full Version Endpoints
+
+#### GET /data
 Returns JSON with all sensor readings
 ```json
 {
@@ -132,24 +310,45 @@ Returns JSON with all sensor readings
 }
 ```
 
-### GET /relay?state=on
-### GET /relay?state=off
-Controls the relay
-- Response: "Relay ON" or "Relay OFF"
-
-### GET /led?state=on
-### GET /led?state=off
-Controls the LED
-- Response: "LED ON" or "LED OFF"
-
 ## Usage Examples
 
 ### Access Web Dashboard
 Open browser and navigate to: `http://ESP32_IP_ADDRESS`
 
+### Access Configuration Interface (Configurable Version)
+Open browser and navigate to: `http://ESP32_IP_ADDRESS/config`
+
 ### Read Sensors via API
 ```bash
+# Configurable version (includes DS18B20 sensors)
 curl http://192.168.1.XXX/data
+
+# Get specific sensor by ID (parse JSON response)
+curl http://192.168.1.XXX/data | jq '.ds18b20[] | select(.id=="pool_temp")'
+```
+
+### Manage DS18B20 Sensors (Configurable Version)
+```bash
+# Scan for available sensors
+curl http://192.168.1.XXX/scan-ds18b20
+
+# Add a new sensor
+curl -X POST http://192.168.1.XXX/add-ds18b20 \
+  -H "Content-Type: application/json" \
+  -d '{"address":"28:AA:BB:CC:DD:EE:FF:00","id":"pool_temp","name":"Pool Temperature"}'
+
+# Update sensor name
+curl -X POST http://192.168.1.XXX/update-ds18b20 \
+  -H "Content-Type: application/json" \
+  -d '{"id":"pool_temp","name":"Swimming Pool Temp"}'
+
+# Remove a sensor
+curl -X POST http://192.168.1.XXX/remove-ds18b20 \
+  -H "Content-Type: application/json" \
+  -d '{"address":"28:AA:BB:CC:DD:EE:FF:00"}'
+
+# List all configured sensors
+curl http://192.168.1.XXX/list-ds18b20
 ```
 
 ### Control Relay via API
@@ -159,6 +358,38 @@ curl http://192.168.1.XXX/relay?state=off
 ```
 
 ### Integration with Home Assistant
+
+**For Configurable Version (DS18B20 sensors):**
+```yaml
+# REST sensor for DS18B20 pool temperature
+sensor:
+  - platform: rest
+    resource: http://192.168.1.XXX/data
+    name: Pool Temperature
+    value_template: '{{ value_json.ds18b20 | selectattr("id", "equalto", "pool_temp") | map(attribute="temperature") | first }}'
+    unit_of_measurement: "°C"
+
+  - platform: rest
+    resource: http://192.168.1.XXX/data
+    name: DHT Temperature
+    value_template: '{{ value_json.dht.temperature }}'
+    unit_of_measurement: "°C"
+
+  - platform: rest
+    resource: http://192.168.1.XXX/data
+    name: DHT Humidity
+    value_template: '{{ value_json.dht.humidity }}'
+    unit_of_measurement: "%"
+
+switch:
+  - platform: rest
+    resource: http://192.168.1.XXX/relay
+    name: ESP32 Relay
+    body_on: 'state=on'
+    body_off: 'state=off'
+```
+
+**For Full Version:**
 ```yaml
 sensor:
   - platform: rest
@@ -224,7 +455,21 @@ Triggers when relay state changes
 
 ## Customization
 
-### Add More Sensors
+### Add More DS18B20 Sensors (Configurable Version)
+The configurable version supports up to 8 DS18B20 sensors on the same OneWire bus:
+1. Connect new DS18B20 sensor to the same GPIO 13 bus (parallel connection)
+2. Navigate to `http://ESP32_IP/config`
+3. Click "Scan Bus" to discover the new sensor
+4. Click "Add Sensor" and give it an ID and name
+5. The sensor will automatically appear on the dashboard
+
+### Change Maximum Sensor Count
+Edit in code:
+```cpp
+#define MAX_DS18B20_SENSORS 16  // Increase from 8 to 16
+```
+
+### Add More Sensors (Other Types)
 1. Define new pin:
 ```cpp
 #define SENSOR_PIN 32
